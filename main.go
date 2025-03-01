@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"html/template"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -14,21 +13,11 @@ import (
 )
 
 var (
-	tmpl     *template.Template
 	gradient = map[string][]string{
 		"default": {" ", ".", ":", "!", "/", "r", "(", "l", "Z", "4", "H", "9", "W", "8", "$", "@"},
 		"reverse": {"@", "$", "8", "W", "9", "H", "4", "Z", "l", "(", "r", "/", "!", ":", ".", " "},
 	}
 )
-
-type PageData struct {
-	ASCII string
-	Error string
-	Form  struct {
-		Width    int
-		Gradient string
-	}
-}
 
 func main() {
 	http.Handle("/", http.FileServer(http.Dir("./static")))
@@ -39,13 +28,21 @@ func main() {
 			return
 		}
 
+		if r.ContentLength > 10<<20 {
+			http.Error(w, "File is too large. Maximum size is 10MB.", http.StatusBadRequest)
+			return
+		}
+
 		r.ParseMultipartForm(10 << 20)
 		width, _ := strconv.Atoi(r.FormValue("width"))
 		style := r.FormValue("style")
 
 		if width < 20 || width > 500 {
-			http.Error(w, "Invalid width (20-500 allowed)", http.StatusBadRequest)
-			return
+			if width < 20 {
+				width = 20
+			} else {
+				width = 500
+			}
 		}
 
 		file, _, err := r.FormFile("image")
@@ -58,6 +55,12 @@ func main() {
 		img, _, err := image.Decode(file)
 		if err != nil {
 			http.Error(w, "Error decoding image", http.StatusInternalServerError)
+			return
+		}
+		bounds := img.Bounds()
+		maxDimension := 5000
+		if bounds.Dx() > maxDimension || bounds.Dy() > maxDimension {
+			http.Error(w, fmt.Sprintf("Image is too large. Maximum dimension is %d pixels.", maxDimension), http.StatusBadRequest)
 			return
 		}
 
